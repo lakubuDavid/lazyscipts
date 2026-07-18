@@ -1,0 +1,68 @@
+#!/usr/bin/env lua
+--- zf - Run any command in a floating Zellij pane
+-- Usage: zf [options] -- <command>
+-- Options:
+--   -q, --quick   Close pane immediately (no press-any-key prompt)
+--
+-- By default shows "Press any key to close..." so you can read output.
+
+local quick = false
+local args = {...}
+local cmd_start = nil
+
+-- Parse options before --
+local i = 1
+while i <= #args do
+    local a = args[i]
+    if a == "--" then
+        cmd_start = i + 1
+        break
+    elseif a == "-q" or a == "--quick" then
+        quick = true
+        i = i + 1
+    elseif a:sub(1, 1) == "-" then
+        io.stderr:write("zf: unknown option " .. a .. "\n")
+        os.exit(1)
+    else
+        -- No -- separator; first non-option starts the command
+        cmd_start = i
+        break
+    end
+end
+
+if not cmd_start or cmd_start > #args then
+    io.stderr:write("Usage: zf [options] -- <command>\n")
+    os.exit(1)
+end
+
+local parts = {}
+for j = cmd_start, #args do
+    parts[#parts + 1] = args[j]
+end
+local cmd = table.concat(parts, " ")
+
+-- Escape for the outer shell so it reaches the inner bash -c verbatim.
+local esc = cmd:gsub('[\\"$`]', {
+    ["\\"] = "\\\\",
+    ['"']  = '\\"',
+    ["$"]  = "\\$",
+    ["`"]  = "\\`",
+})
+
+-- Forward current PATH so scripts in custom paths (like ~/.config/scripts/) work.
+local path = os.getenv("PATH") or ""
+local path_esc = path:gsub('[\\"$`]', {
+    ["\\"] = "\\\\",
+    ['"']  = '\\"',
+    ["$"]  = "\\$",
+    ["`"]  = "\\`",
+})
+
+local trailer
+if quick then
+    trailer = "echo; zellij action close-pane"
+else
+    trailer = "echo; read -n1 -rsp 'Press any key to close...'; zellij action close-pane"
+end
+
+os.execute(("zellij action new-pane --floating -- env PATH=\"%s\" bash -c \"%s; %s\""):format(path_esc, esc, trailer))

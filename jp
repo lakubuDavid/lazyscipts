@@ -1,0 +1,79 @@
+#!/usr/bin/env lua
+--- jp - Pick and run a just recipe
+-- Usage: jp [options]
+-- Options:
+--   -f, --floating  Run in a floating Zellij pane
+--   -q, --quick     Close pane immediately (only with -f)
+--
+-- Default: run locally in the current terminal.
+
+local floating = false
+local quick = false
+local args = {...}
+
+-- Parse options (everything before a non-option arg, but jp has none)
+for _, a in ipairs(args) do
+    if a == "-f" or a == "--floating" then
+        floating = true
+    elseif a == "-q" or a == "--quick" then
+        quick = true
+    elseif a:sub(1, 1) == "-" then
+        io.stderr:write("jp: unknown option " .. a .. "\n")
+        os.exit(1)
+    end
+end
+
+-- Run just --list through fzf to pick a recipe
+local fzf = io.popen("just --list | fzf --height=40% --border --prompt='Recipe: '", "r")
+if not fzf then
+    io.stderr:write("jp: failed to launch fzf\n")
+    os.exit(1)
+end
+
+local recipe = fzf:read("*a")
+fzf:close()
+
+-- Trim whitespace
+recipe = recipe:gsub("^%s*(.-)%s*$", "%1")
+
+if recipe == "" then
+    os.exit(0)
+end
+
+-- Check if Zellij is available
+local zellij_ok = (os.execute("command -v zellij >/dev/null 2>&1") == 0)
+
+if floating and not zellij_ok then
+    io.stderr:write("jp: Zellij not found, running locally\n")
+    floating = false
+end
+
+if floating then
+    -- Run in a floating Zellij pane
+    local esc = recipe:gsub('[\\"$`]', {
+        ["\\"] = "\\\\",
+        ['"']  = '\\"',
+        ["$"]  = "\\$",
+        ["`"]  = "\\`",
+    })
+
+    local path = os.getenv("PATH") or ""
+    local path_esc = path:gsub('[\\"$`]', {
+        ["\\"] = "\\\\",
+        ['"']  = '\\"',
+        ["$"]  = "\\$",
+        ["`"]  = "\\`",
+    })
+
+    local trailer
+    if quick then
+        trailer = "echo; zellij action close-pane"
+    else
+        trailer = "echo; read -n1 -rsp 'Press any key to close...'; zellij action close-pane"
+    end
+
+    os.execute(("zellij action new-pane --floating -- env PATH=\"%s\" bash -c \"just %s; %s\""):format(path_esc, esc, trailer))
+else
+    -- Run locally in the current terminal
+    os.execute("just " .. recipe)
+end
