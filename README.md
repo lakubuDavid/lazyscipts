@@ -14,6 +14,10 @@ A tiny task tracker that stores each task as a markdown file with YAML
 frontmatter and keeps an auto-generated `todos/index.lua` index. Designed to be
 hackable and LLM-friendly.
 
+I was using a custom pi extension but it wouldn't always work and since I sometimes switch between agent harness.
+
+So I have this really simple `todo list` that any agent can use 
+
 ```
 todo add "Ship feature" "Description of the task" "Extra details"
 todo list [--done|--pending]
@@ -37,6 +41,10 @@ Storage lives in a `./todos/` directory relative to where you run the command.
 Fuzzy-pick a recipe from `just --list` using `fzf`, then run it. Optionally
 spawns the command in a floating Zellij pane.
 
+I made it for helix, I have a keybind that opens it in a floating pane like a command palette.
+
+But with the new plugin system coming might not need it.
+
 ```
 jp              # pick recipe, run in current terminal
 jp -f           # pick recipe, run in floating Zellij pane
@@ -56,6 +64,13 @@ jp -f -q        # same, but close pane immediately when done
 
 Run any command in a floating Zellij pane. Shows output and waits for a keypress
 before closing (unless `-q` is used).
+
+I use it a lot with helix,
+
+I have bound it to:
+- ctrl + j : `zf -- yazi`
+- ctrl + l : `zf -- lazygit`
+- ctrl + r : `zf -- serpl`
 
 ```
 zf -- ls -la
@@ -77,13 +92,15 @@ Symlink or copy any script into a directory on your `$PATH`:
 
 ```sh
 # Example: symlink all three into ~/.local/bin
-ln -sf ~/Code/Lua/lazyscripts/todo ~/.local/bin/todo
-ln -sf ~/Code/Lua/lazyscripts/jp   ~/.local/bin/jp
-ln -sf ~/Code/Lua/lazyscripts/zf   ~/.local/bin/zf
+ln -sf ~/path/to/lazyscripts/todo ~/.local/bin/todo
+ln -sf ~/path/to/lazyscripts/jp   ~/.local/bin/jp
+ln -sf ~/path/to/lazyscripts/zf   ~/.local/bin/zf
+
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Or add the whole directory to your `PATH`:
 
 ```sh
-export PATH="$HOME/Code/Lua/lazyscripts:$PATH"
+export PATH="$HOME/path/to/lazyscripts:$PATH"
 ```
