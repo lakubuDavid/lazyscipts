@@ -1,0 +1,53 @@
+#!/usr/bin/env lua
+--- fancynames - generate human-readable names/emails by combining adjectives + animals.
+-- Uses the names.lua library located in the same directory as this script.
+--
+-- Examples:
+--   fancynames                  -> brave-wolf
+--   fancynames email            -> brave-wolf-48213@example.com
+--   fancynames email example.invalid -> brave-wolf-48213@example.invalid
+--   fancynames emails 5         -> five emails
+--   fancynames n 3              -> three names
+--   fancynames -h | --help      -> this help
+
+-- Resolve this script's directory so we can find names.lua.
+local thisScript = arg[0] or "fancynames"
+local scriptDir  = thisScript:match("^(.*)[/\\]") or "."
+local sep        = package.config:sub(1, 1)
+package.path = scriptDir .. sep .. "?.lua;" .. package.path
+local names = require("names")
+
+local function usage()
+    io.write([[
+fancynames - generate names/emails from adjective + animal combos
+
+Usage:
+  fancynames                     print one name (e.g. "brave-wolf")
+  fancynames email [domain]      print one email (default domain: example.com)
+  fancynames emails <count> [domain]  print <count> unique emails
+  fancynames n <count>           print <count> names
+  fancynames -h | --help         show this help
+]])
+end
+
+local args = {...}
+local cmd  = args[1]
+
+if cmd == "-h" or cmd == "--help" then
+    usage()
+elseif cmd == "email" then
+    print(names.email(args[2] or "example.com"))
+elseif cmd == "emails" then
+    local count  = tonumber(args[2]) or 5
+    local domain = args[3] or "example.com"
+    for i = 1, count do
+        print(names.email(domain, math.random(10000, 99999)))
+    end
+elseif cmd == "n" then
+    local count = tonumber(args[2]) or 5
+    for i = 1, count do
+        print(names.name())
+    end
+else
+    print(names.name())
+end
