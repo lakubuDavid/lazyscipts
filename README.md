@@ -117,7 +117,23 @@ fancynames n 3                      # three names
 
 ## Installation
 
-Symlink or copy any script into a directory on your `$PATH`:
+The quickest way is to run the installer, which symlinks all the scripts into
+`~/.local/bin` (no `sudo` needed):
+
+```sh
+./install.sh      # shell installer
+./install.lua     # Lua installer
+```
+
+Both symlink `todo`, `jp`, `zf`, and `fancynames` into `~/.local/bin` by
+default. Override the destination with an argument or the `DEST` env var:
+
+```sh
+./install.sh ~/bin
+DEST=~/bin ./install.lua
+```
+
+Or do it by hand — symlink or copy any script into a directory on your `$PATH`:
 
 ```sh
 # Example: symlink the scripts into ~/.local/bin
