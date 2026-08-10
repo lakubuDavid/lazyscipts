@@ -6,6 +6,29 @@ into existing tools like `just`, `fzf`, or `zellij`.
 
 **Requires:** `lua` (5.1+ / LuaJIT)
 
+## Quick Install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/lakubuDavid/lazyscipts/main/install.sh | sh
+```
+
+The installer clones the repo to a temp folder, runs `install.lua -i` (interactive
+mode — pick which scripts to link), then cleans up. Symlinks go into `~/.local/bin`.
+
+Or run locally from the repo:
+
+```sh
+./install.sh            # uses local files, no clone needed
+./install.sh -i         # interactive mode (choose scripts)
+```
+
+Override the destination with an argument or `DEST` env var:
+
+```sh
+./install.sh ~/bin
+DEST=~/bin ./install.sh
+```
+
 ## Scripts
 
 ### `todo` — Markdown-Backed to-Do CLI
