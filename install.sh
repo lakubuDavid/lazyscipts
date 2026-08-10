@@ -1,59 +1,76 @@
 #!/bin/sh
-# install.sh - symlink lazyscripts (todo, jp, zf, fancynames) into ~/.local/bin
+# install.sh - bootstrap installer for lazyscripts
 #
 # Usage:
-#   ./install.sh                 # link into ~/.local/bin (default)
-#   ./install.sh ~/bin           # link into another directory
-#   DEST=~/bin ./install.sh      # same, via env var
+#   curl -fsSL https://raw.githubusercontent.com/lakubuDavid/lazyscipts/main/install.sh | sh
+#   wget -qO- https://raw.githubusercontent.com/lakubuDavid/lazyscipts/main/install.sh | sh
+#   ./install.sh                    # local execution (also clones to temp)
 #
-# Uses sudo only if the destination isn't writable (e.g. /usr/local/bin on
-# root-owned systems); user dirs like ~/.local/bin need no sudo.
+# This script:
+# 1. Checks for lua and git (fails if missing)
+# 2. Clones the repo to a temp folder
+# 3. Runs install.lua -i (interactive mode)
+# 4. Cleans up the temp folder
 
 set -eu
 
-# Directory containing this script (the repo root). Resolves relative paths
-# so it works when invoked as ./install.sh or via a symlink in $PATH.
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-
-# Every script in this collection is a Lua script, so lua is required.
+# Check for lua
 if ! command -v lua >/dev/null 2>&1; then
-    echo "error: lua not found on PATH — all lazyscripts are Lua scripts" >&2
+    echo "error: lua not found on PATH" >&2
     echo "       install it first (e.g. brew install lua) and re-run." >&2
     exit 1
 fi
 
-DEST="${1:-${DEST:-$HOME/.local/bin}}"
-SCRIPTS="todo jp zf fancynames"
-
-# Create the destination as the current user when possible; escalate to sudo
-# only if it's missing and can't be created, or exists but isn't writable.
-mkdir -p "$DEST" 2>/dev/null || true
-
-SUDO=
-if [ ! -w "$DEST" ]; then
-    if [ -x /usr/bin/sudo ] || [ -x /bin/sudo ]; then
-        SUDO=sudo
-    fi
+# Try to determine script directory (works when run locally, fails when piped)
+SCRIPT_DIR=""
+if [ -n "$0" ] && [ "$0" != "-" ] && [ -f "$0" ]; then
+    SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || SCRIPT_DIR=""
 fi
 
-# Make sure the destination is usable.
-if ! $SUDO mkdir -p "$DEST" 2>/dev/null; then
-    echo "error: cannot create/write $DEST" >&2
+# Check if we have local files
+USE_LOCAL=false
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/install.lua" ] && [ -f "$SCRIPT_DIR/todo" ]; then
+    USE_LOCAL=true
+    INSTALL_DIR="$SCRIPT_DIR"
+fi
+
+# Check for git
+if ! command -v git >/dev/null 2>&1; then
+    echo "error: git not found on PATH" >&2
+    echo "       install it first (e.g. brew install git) and re-run." >&2
     exit 1
 fi
 
-installed=0
-for s in $SCRIPTS; do
-    src="$SCRIPT_DIR/$s"
-    if [ ! -f "$src" ]; then
-        echo "skip: $s (not found in $SCRIPT_DIR)" >&2
-        continue
-    fi
-    # -n: don't follow an existing symlink (avoids the "is a directory" trap)
-    # -f: replace any existing target
-    $SUDO ln -sfn "$src" "$DEST/$s"
-    echo "linked: $DEST/$s -> $src"
-    installed=$((installed + 1))
-done
+# Determine if we should use local files or clone
+USE_LOCAL=false
+if [ -f "$SCRIPT_DIR/install.lua" ] && [ -f "$SCRIPT_DIR/todo" ]; then
+    USE_LOCAL=true
+    INSTALL_DIR="$SCRIPT_DIR"
+else
+    # Clone to temp directory
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR"' EXIT
 
-echo "done: $installed script(s) linked into $DEST"
+    echo "Cloning lazyscripts to temp directory..."
+    if ! git clone --depth 1 https://github.com/lakubuDavid/lazyscipts.git "$TMPDIR/lazyscripts" 2>/dev/null; then
+        echo "error: failed to clone repository" >&2
+        exit 1
+    fi
+    INSTALL_DIR="$TMPDIR/lazyscripts"
+fi
+
+cd "$INSTALL_DIR"
+
+echo "Running interactive install..."
+lua install.lua -i
+
+if [ "$USE_LOCAL" = "false" ]; then
+    echo ""
+    echo "Installation complete! Temp files cleaned up."
+else
+    echo ""
+    echo "Installation complete!"
+fi
+
+echo "Make sure $HOME/.local/bin is in your PATH:"
+echo "  export PATH=\"\$HOME/.local/bin:\$PATH\""
