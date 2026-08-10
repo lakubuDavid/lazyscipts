@@ -1,9 +1,10 @@
 #!/usr/bin/env lua
---- install.lua - symlink lazyscripts (todo, jp, zf, fancynames) into ~/.local/bin
+--- install.lua - symlink lazyscripts (todo, jp, zf, fancynames, wiki-init) into ~/.local/bin
 -- Usage:
---   ./install.lua                 # link into ~/.local/bin (default)
+--   ./install.lua                 # link all into ~/.local/bin (default)
 --   ./install.lua ~/bin           # link into another directory
 --   DEST=~/bin ./install.lua      # same, via env var
+--   ./install.lua -i              # interactive: choose which scripts to link
 --
 -- Uses sudo only if the destination isn't writable (e.g. /usr/local/bin on
 -- root-owned systems); user dirs like ~/.local/bin need no sudo.
@@ -22,8 +23,46 @@ scriptDir = scriptDir:gsub("/+$", ""):gsub("/%.$", "")
 if scriptDir == "" or scriptDir == "." then scriptDir = cwd end
 
 local home = os.getenv("HOME")
-local dest = arg[1] or os.getenv("DEST") or (home and home .. "/.local/bin") or "/usr/local/bin"
-local scripts = { "todo", "jp", "zf", "fancynames" }
+local interactive = false
+local scripts = { "todo", "jp", "zf", "fancynames", "wiki-init" }
+
+-- Parse flags before destination argument
+local args = {}
+for _, a in ipairs(arg) do
+    if a == "-i" or a == "--interactive" then
+        interactive = true
+    else
+        args[#args + 1] = a
+    end
+end
+
+local dest = args[1] or os.getenv("DEST") or (home and home .. "/.local/bin") or "/usr/local/bin"
+
+-- Interactive mode: let user choose which scripts to install
+if interactive then
+    print("Available scripts:")
+    for i, s in ipairs(scripts) do
+        print(string.format("  %d. %s", i, s))
+    end
+    print()
+    io.write("Enter numbers to install (comma-separated), or 'all', or 'none': ")
+    local input = io.read("*l") or ""
+    input = input:lower():gsub("%s", "")
+
+    local selected = {}
+    if input == "all" then
+        selected = scripts
+    elseif input ~= "none" and input ~= "" then
+        -- Parse comma-separated numbers
+        for num in input:gmatch("[^,]+") do
+            local idx = tonumber(num)
+            if idx and idx >= 1 and idx <= #scripts then
+                selected[#selected + 1] = scripts[idx]
+            end
+        end
+    end
+    scripts = selected
+end
 
 -- Run a command and return true on success (works across Lua 5.1 - 5.4).
 local function run(cmd)
