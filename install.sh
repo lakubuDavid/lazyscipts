@@ -8,21 +8,21 @@ SOURCE_DIR=$SCRIPT_DIR
 TEMP_DIR=
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  CYAN='\033[36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RESET='\033[0m'
+  CYAN='\033[38;2;116;141;166m'; GREEN='\033[38;2;156;180;204m'; LAVENDER='\033[38;2;211;206;223m'; YELLOW='\033[38;2;242;215;217m'; RESET='\033[0m'
 else
-  CYAN=; GREEN=; YELLOW=; RESET=
+  CYAN=; GREEN=; LAVENDER=; YELLOW=; RESET=
 fi
 
 printf '%b\n' "${CYAN}========================================${RESET}"
 printf '%b\n' "${CYAN}          lazyscripts installer${RESET}"
 printf '%b\n' "${CYAN}========================================${RESET}"
 printf '%b\n' "${GREEN}lazyscripts provides small Lua command-line utilities.${RESET}"
-printf '%s\n' 'todo       Markdown-backed task manager'
-printf '%s\n' 'jp         fuzzy just-recipe picker'
-printf '%s\n' 'zf         Zellij floating-pane command runner'
-printf '%s\n' 'fancynames name and identifier helper'
-printf '%s\n' 'wiki-init  wiki/documentation initializer'
-printf '%b' 'Continue and choose utilities to install? [y/N] '
+printf '%b\n' "${LAVENDER}todo       Markdown-backed task manager${RESET}"
+printf '%b\n' "${LAVENDER}jp         fuzzy just-recipe picker${RESET}"
+printf '%b\n' "${LAVENDER}zf         Zellij floating-pane command runner${RESET}"
+printf '%b\n' "${LAVENDER}fancynames name and identifier helper${RESET}"
+printf '%b\n' "${LAVENDER}wiki-init  wiki/documentation initializer${RESET}"
+printf '%b' "${YELLOW}Continue and choose utilities to install? [y/N] ${RESET}"
 
 if [ "${LAZYSCRIPTS_YES:-}" != "1" ] && [ "${LAZYSCRIPTS_YES:-}" != "true" ]; then
   if [ -r /dev/tty ]; then
