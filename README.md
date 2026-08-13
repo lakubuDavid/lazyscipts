@@ -9,6 +9,12 @@ into existing tools like `just`, `fzf`, or `zellij`.
 ## Quick Install
 
 ```sh
+curl -fsSL https://lakubudavid.me/lazyscripts/install.sh | sh
+```
+
+The installer script is also available directly from GitHub:
+
+```sh
 curl -fsSL https://raw.githubusercontent.com/lakubuDavid/lazyscipts/main/install.sh | sh
 ```
 
