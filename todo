@@ -3,9 +3,11 @@
 --
 -- Usage:
 --   todo add TITLE "DESCRIPTION" ["DETAILS"]
---   todo list [--done|--pending]
+--   todo list|ls [--all|--done|--pending|--canceled|--in-progress|--status=STATUS]
 --   todo status TASK_ID
---   todo update TASK_ID pending|done
+--   todo update TASK_ID pending|in-progress|done|canceled
+--   todo edit TASK_ID            (interactive $EDITOR; NOT for AI agents, no TTY)
+--   todo init [--embed] [--agents|--no-agents]
 --
 -- Storage:
 --   ./todos/index.lua        -- a Lua table (not JSON), loaded with dofile()
@@ -64,6 +66,108 @@ local function set_frontmatter_field(path, field, value)
   if n == 0 then return false end
   write_file(path, updated)
   return true
+end
+
+local function get_frontmatter_field(path, field)
+  local content = read_file(path)
+  if not content then return nil end
+  return content:match(field .. ':%s*"?([^"\n]*)"?')
+end
+
+-- ---------- statuses ----------
+
+local STATUSES = { pending = true, ["in-progress"] = true, done = true, canceled = true }
+
+-- ---------- tty / prompt ----------
+
+local function is_tty()
+  local ok, _, code = os.execute("test -t 0 2>/dev/null")
+  return ok == true or ok == 0
+end
+
+local function prompt_yes_no(question)
+  if not is_tty() then return false end
+  io.write(question .. " [y/N] ")
+  local ans = io.read("*l")
+  return ans == "y" or ans == "Y" or ans == "yes" or ans == "YES"
+end
+
+-- ---------- AGENTS.md directive (idempotent marker block) ----------
+
+local TODO_AGENTS_BEGIN = "<!-- begin todo agent directive -->"
+local TODO_AGENTS_END = "<!-- end todo agent directive -->"
+local TODO_AGENTS_BLOCK = table.concat({
+  TODO_AGENTS_BEGIN,
+  "## todo CLI (repo tasks in ./todos/)",
+  "- `todo list` / `todo ls --status=<pending|in-progress|done|canceled>` -- list tasks",
+  "- `todo status ID` -- show full task markdown",
+  "- `todo add TITLE \"DESC\" [\"DETAILS\"]` -- create task",
+  "- `todo update ID <status>` -- change status",
+  "- Do NOT use `todo edit` (needs interactive $EDITOR/TTY); prefer status/update.",
+  TODO_AGENTS_END,
+}, "\n") .. "\n"
+
+-- action: "yes" forces add, "no" forces skip, nil prompts when TTY
+local function ensure_agents_directive(action)
+  local want = action == "yes"
+  if action ~= "no" and not want then
+    if not prompt_yes_no("Add todo directive to AGENTS.md?") then return end
+    want = true
+  end
+  if not want then return end
+  local path = "AGENTS.md"
+  local existing = read_file(path) or ""
+  if existing:find(TODO_AGENTS_BEGIN, 1, true) then
+    print("AGENTS.md already has todo directive, skipping.")
+    return
+  end
+  local sep = ""
+  if existing ~= "" then
+    if not existing:match("\n$") then sep = "\n" end
+    sep = sep .. "\n"
+  end
+  write_file(path, existing .. sep .. TODO_AGENTS_BLOCK)
+  print("Added todo directive to AGENTS.md")
+end
+
+-- ---------- embed (copy self into project + root symlink) ----------
+
+local function self_path()
+  local src = (arg and arg[0]) or "todo"
+  if not src:find("/", 1, true) then
+    local p = io.popen('command -v todo 2>/dev/null')
+    local resolved = p and p:read("*l")
+    if p then p:close() end
+    if resolved and resolved ~= "" then src = resolved end
+  end
+  return src
+end
+
+local function is_symlink(path)
+  local ok, _, code = os.execute(string.format('test -L "%s" 2>/dev/null', path))
+  return ok == true or ok == 0
+end
+
+local function embed_self()
+  ensure_dir("scripts")
+  local dest = "scripts/todo"
+  if read_file(dest) then
+    print("scripts/todo already exists, skipping copy.")
+  else
+    local src = self_path()
+    local ok, _, code = os.execute(string.format('cp "%s" "%s" && chmod +x "%s"', src, dest, dest))
+    if not (ok == true or ok == 0) then
+      print("Failed to copy " .. src .. " to " .. dest)
+      return
+    end
+    print("Embedded todo at scripts/todo")
+  end
+  if read_file("todo") and not is_symlink("todo") then
+    print("./todo already exists (not a symlink), skipping symlink.")
+  else
+    os.execute('ln -sf "scripts/todo" "todo"')
+    print("Symlinked ./todo -> scripts/todo")
+  end
 end
 
 -- ---------- index (todos/index.lua) ----------
@@ -159,15 +263,25 @@ local function cmd_add(title, description, details)
 end
 
 local function cmd_list(filter)
-  local index = load_index()
-  local want_status = nil
-  if filter == "--done" then want_status = "done"
-  elseif filter == "--pending" then want_status = "pending"
-  elseif filter ~= nil then
-    print("Unknown filter: " .. filter .. " (use --done or --pending)")
+  local want = nil
+  local a = filter
+  if a == nil or a == "--all" then want = nil
+  elseif a == "--done" then want = "done"
+  elseif a == "--pending" then want = "pending"
+  elseif a == "--canceled" or a == "--cancelled" then want = "canceled"
+  elseif a == "--in-progress" or a == "--inprogress" then want = "in-progress"
+  elseif a and a:match("^%-%-status=") then want = a:match("^%-%-status=(.+)$")
+  else
+    print("Unknown filter: " .. tostring(a) .. " (use --all or --status=pending|in-progress|done|canceled)")
+    return
+  end
+  if want and not STATUSES[want] then
+    print("Unknown status: " .. want .. " (use pending|in-progress|done|canceled)")
     return
   end
 
+  local index = load_index()
+  local want_status = want
   local shown = 0
   for _, t in ipairs(index.tasks) do
     if not want_status or t.status == want_status then
@@ -201,11 +315,11 @@ end
 
 local function cmd_update(id, new_status)
   if not id or not new_status then
-    print("Usage: todo update TASK_ID pending|done")
+    print("Usage: todo update TASK_ID pending|in-progress|done|canceled")
     return
   end
-  if new_status ~= "pending" and new_status ~= "done" then
-    print("Status must be 'pending' or 'done'")
+  if not STATUSES[new_status] then
+    print("Status must be one of: pending, in-progress, done, canceled")
     return
   end
   local index = load_index()
@@ -230,14 +344,66 @@ local function cmd_update(id, new_status)
   print(string.format("Task %s -> %s", id, new_status))
 end
 
+local function cmd_edit(id)
+  if not id then
+    print("Usage: todo edit TASK_ID")
+    print("Note: needs interactive $EDITOR/TTY; AI agents should use status/update instead.")
+    return
+  end
+  local index = load_index()
+  local task = find_task(index, id)
+  if not task then
+    print("No task with id " .. id)
+    return
+  end
+  local editor = os.getenv("EDITOR")
+  if not editor or editor == "" then
+    print("Error: $EDITOR is not set (e.g. export EDITOR=nvim).")
+    return
+  end
+  local filepath = TODO_DIR .. "/" .. task.file
+  os.execute(string.format('%s "%s"', editor, filepath))
+  -- resync index with any frontmatter edits made by hand
+  local st = get_frontmatter_field(filepath, "status")
+  if st and STATUSES[st] then task.status = st end
+  local ti = get_frontmatter_field(filepath, "title")
+  if ti and ti ~= "" then task.title = ti end
+  task.last_modified = iso_now()
+  set_frontmatter_field(filepath, "last_modified", task.last_modified)
+  save_index(index)
+  print(string.format("Edited task %s (%s)", id, filepath))
+end
+
+local function cmd_init()
+  local embed, agents = false, nil
+  for k = 2, #arg do
+    local a = arg[k]
+    if a == "--embed" then embed = true
+    elseif a == "--agents" then agents = "yes"
+    elseif a == "--no-agents" then agents = "no"
+    else print("Unknown init flag: " .. a .. " (use --embed, --agents, --no-agents)") return end
+  end
+  ensure_dir(TODO_DIR)
+  if read_file(INDEX_FILE) then
+    print(INDEX_FILE .. " already exists, skipping.")
+  else
+    save_index({ last_id = 0, tasks = {} })
+    print("Created " .. INDEX_FILE)
+  end
+  if embed then embed_self() end
+  ensure_agents_directive(agents)
+end
+
 local function usage()
   print([[
 todo — a markdown-backed todo CLI
 
   todo add TITLE "DESCRIPTION" ["DETAILS"]
-  todo list [--done|--pending]
+  todo list|ls [--all|--done|--pending|--canceled|--in-progress|--status=STATUS]
   todo status TASK_ID
-  todo update TASK_ID pending|done
+  todo update TASK_ID pending|in-progress|done|canceled
+  todo edit TASK_ID            (opens $EDITOR; needs TTY, not for AI agents)
+  todo init [--embed] [--agents|--no-agents]
 ]])
 end
 
@@ -247,12 +413,16 @@ local command = arg[1]
 
 if command == "add" then
   cmd_add(arg[2], arg[3], arg[4])
-elseif command == "list" then
+elseif command == "list" or command == "ls" then
   cmd_list(arg[2])
 elseif command == "status" then
   cmd_status(arg[2])
 elseif command == "update" then
   cmd_update(arg[2], arg[3])
+elseif command == "edit" then
+  cmd_edit(arg[2])
+elseif command == "init" then
+  cmd_init()
 else
   usage()
 end

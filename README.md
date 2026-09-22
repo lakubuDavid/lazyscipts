@@ -49,17 +49,25 @@ So I have this really simple `todo list` that any agent can use
 
 ```
 todo add "Ship feature" "Description of the task" "Extra details"
-todo list [--done|--pending]
+todo list [--status=pending|in-progress|done|canceled]   # `ls` works too
 todo status 001
-todo update 001 done
+todo update 001 in-progress
+todo edit 001        # opens $EDITOR (TTY only, not for agents)
+todo init [--embed] [--agents|--no-agents]
 ```
 
 | Command | Description |
 |---------|-------------|
 | `todo add TITLE "DESC" ["DETAILS"]` | Create a new pending task |
-| `todo list [--done\|--pending]` | List tasks, optionally filtered |
+| `todo list\|ls [--status=STATUS]` | List tasks, optionally filtered (`--done`, `--pending`, `--canceled`, `--in-progress`, `--all`) |
 | `todo status TASK_ID` | Show full task Markdown |
-| `todo update TASK_ID pending\|done` | Change task status |
+| `todo update TASK_ID STATUS` | Change task status (`pending`, `in-progress`, `done`, `canceled`) |
+| `todo edit TASK_ID` | Open task in `$EDITOR` (interactive only) |
+| `todo init [--embed] [--agents]` | Create `todos/index.lua`; `--embed` copies `todo` into `scripts/` + root symlink |
+
+`todo init` and `wiki-init` can append a short usage directive to `AGENTS.md`
+(idempotent `<!-- begin ... -->` marker blocks; prompted when interactive, `--agents` forces, `--no-agents` skips).
+`wiki-init --embed` does the same copy+symlink for itself.
 
 Storage lives in a `./todos/` directory relative to where you run the command.
 

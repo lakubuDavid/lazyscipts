@@ -12,11 +12,15 @@
 --   --with-docs                Also scaffold wiki/docs/
 --   --dry-run                  Print what would be created
 --   --force                    Overwrite existing files
+--   --embed                    Copy wiki-init into <root>/scripts/ + symlink <root>/wiki-init
+--   --agents / --no-agents     Add wiki directive to <root>/AGENTS.md (else prompt when TTY)
+--   --root <PATH>              Use PATH as project root (skip detection)
 --
 -- Usage:
---   ./wiki-init.lua
---   ./wiki-init.lua --with-guides --with-diagrams
---   ./wiki-init.lua --dry-run
+--   ./wiki-init
+--   ./wiki-init --root /path/to/project
+--   ./wiki-init --with-guides --with-diagrams
+--   ./wiki-init --dry-run
 
 -- ── Colors ───────────────────────────────────────────────────────────────────
 local GREEN  = "\27[0;32m"
@@ -43,16 +47,31 @@ local opts = {
     with_docs    = false,
     dry_run      = false,
     force        = false,
+    embed        = false,
+    agents       = nil, -- "yes" forces add, "no" forces skip, nil prompts when TTY
+    root         = nil,
 }
 
-for _, a in ipairs(arg) do
+local i = 1
+while i <= #arg do
+    local a = arg[i]
     if a == "--with-guides"   then opts.with_guides   = true
     elseif a == "--with-diagrams" then opts.with_diagrams = true
     elseif a == "--with-docs"  then opts.with_docs     = true
     elseif a == "--dry-run"    then opts.dry_run       = true
     elseif a == "--force"      then opts.force         = true
+    elseif a == "--embed"      then opts.embed         = true
+    elseif a == "--agents"     then opts.agents        = "yes"
+    elseif a == "--no-agents"  then opts.agents        = "no"
+    elseif a == "--root" then
+        if not arg[i + 1] or arg[i + 1] == "" or arg[i + 1]:sub(1, 1) == "-" then
+            io.stderr:write(string.format("%sError: --root requires a path%s\n", RED, NC))
+            os.exit(1)
+        end
+        opts.root = arg[i + 1]
+        i = i + 1
     elseif a == "-h" or a == "--help" then
-        print([[Usage: ./wiki-init.lua [OPTIONS]
+        print([[Usage: ./wiki-init [OPTIONS]
 
 Scaffold a project wiki with canonical structure:
   wiki/README.md             Top-level index
@@ -65,12 +84,17 @@ Options:
   --with-diagrams      Also scaffold wiki/diagrams/
   --with-docs          Also scaffold wiki/docs/
   --dry-run            Print what would be created
-  --force              Overwrite existing files]])
+  --force              Overwrite existing files
+  --embed              Copy wiki-init into <root>/scripts/ + symlink <root>/wiki-init
+  --agents             Add wiki directive to <root>/AGENTS.md
+  --no-agents          Never touch AGENTS.md (default: prompt when TTY)
+  --root <PATH>        Use PATH as project root (skip root detection)]])
         os.exit(0)
     else
         io.stderr:write(string.format("%sUnknown option: %s%s\n", RED, a, NC))
         os.exit(1)
     end
+    i = i + 1
 end
 
 -- ── Filesystem helpers ───────────────────────────────────────────────────────
@@ -139,10 +163,18 @@ local function detect_project_root()
     return nil
 end
 
-local root = detect_project_root()
+local root = opts.root or detect_project_root()
+if opts.root then
+    local check = io.open(root .. "/.", "r")
+    if not check then
+        io.stderr:write(string.format("%sError: root does not exist or is not readable: %s%s\n", RED, root, NC))
+        os.exit(1)
+    end
+    check:close()
+end
 if not root then
     io.stderr:write(string.format(
-        "%sError: could not detect project root.%s\nRun from a directory containing mise.toml, package.json, go.mod, etc.\n",
+        "%sError: could not detect project root.%s\nRun from a directory containing mise.toml, package.json, go.mod, etc., or pass --root <PATH>.\n",
         RED, NC))
     os.exit(1)
 end
@@ -383,6 +415,97 @@ Project-specific documentation that doesn't fit in `concepts/`, `decisions/`, or
 - Integration guides
 ]]
 
+-- ── Embed + AGENTS.md directive ──────────────────────────────────────────────
+local function is_tty()
+    local ok, _, code = os.execute("test -t 0 2>/dev/null")
+    return ok == true or ok == 0
+end
+
+local function prompt_yes_no(question)
+    if not is_tty() then return false end
+    io.write(question .. " [y/N] ")
+    local ans = io.read("*l")
+    return ans == "y" or ans == "Y" or ans == "yes" or ans == "YES"
+end
+
+local WIKI_AGENTS_BEGIN = "<!-- begin wiki-init agent directive -->"
+local WIKI_AGENTS_END = "<!-- end wiki-init agent directive -->"
+local WIKI_AGENTS_BLOCK = table.concat({
+    WIKI_AGENTS_BEGIN,
+    "## wiki-init (project wiki in ./wiki/)",
+    "- `wiki-init --root <PATH> [--with-guides] [--with-diagrams] [--with-docs]` -- scaffold wiki/README.md, concepts/, decisions/, guidelines.md",
+    "- Re-run safely; existing files are skipped unless `--force`. Preview with `--dry-run`.",
+    WIKI_AGENTS_END,
+}, "\n") .. "\n"
+
+local function read_file_opt(path)
+    local f = io.open(path, "r")
+    if not f then return nil end
+    local c = f:read("*a")
+    f:close()
+    return c
+end
+
+local function ensure_agents_directive(root_dir, action)
+    local want = action == "yes"
+    if action ~= "no" and not want then
+        if not prompt_yes_no("Add wiki-init directive to AGENTS.md?") then return end
+        want = true
+    end
+    if not want then return end
+    local path = root_dir .. "/AGENTS.md"
+    local existing = read_file_opt(path) or ""
+    if existing:find(WIKI_AGENTS_BEGIN, 1, true) then
+        print("AGENTS.md already has wiki-init directive, skipping.")
+        return
+    end
+    if opts.dry_run then
+        info("  would update %s (append wiki-init directive)", path)
+        return
+    end
+    local sep = ""
+    if existing ~= "" then
+        if not existing:match("\n$") then sep = "\n" end
+        sep = sep .. "\n"
+    end
+    local f = assert(io.open(path, "w"))
+    f:write(existing .. sep .. WIKI_AGENTS_BLOCK)
+    f:close()
+    ok("  updated    %s (appended wiki-init directive)", path)
+end
+
+local function embed_self(root_dir)
+    local dest, link = root_dir .. "/scripts/wiki-init", root_dir .. "/wiki-init"
+    if opts.dry_run then
+        info("  would create %s (copy of running wiki-init)", dest)
+        info("  would create %s (symlink -> scripts/wiki-init)", link)
+        return
+    end
+    ensure_dir(root_dir .. "/scripts")
+    if exists(dest) then
+        warn("  skip       %s (already exists)", dest)
+    else
+        local src = (arg and arg[0]) or "wiki-init"
+        if not src:find("/", 1, true) then
+            local p = io.popen("command -v wiki-init 2>/dev/null")
+            local resolved = p and p:read("*l")
+            if p then p:close() end
+            if resolved and resolved ~= "" then src = resolved end
+        end
+        local ok_run = run(string.format('cp \'%s\' \'%s\' && chmod +x \'%s\'',
+            src:gsub("'", "'\\''"), dest:gsub("'", "'\\''"), dest:gsub("'", "'\\''")))
+        if ok_run then ok("  created    %s (copy of running wiki-init)", dest) end
+    end
+    local is_link = os.execute(string.format('test -L \'%s\' 2>/dev/null', link:gsub("'", "'\\''")))
+    local linked = is_link == true or is_link == 0
+    if exists(link) and not linked then
+        warn("  skip       %s (exists, not a symlink)", link)
+    else
+        run(string.format('ln -sf \'scripts/wiki-init\' \'%s\'', link:gsub("'", "'\\''")))
+        ok("  created    %s (symlink -> scripts/wiki-init)", link)
+    end
+end
+
 -- ── Build the wiki ───────────────────────────────────────────────────────────
 info("Initializing wiki in: %s", wiki)
 print()
@@ -410,6 +533,11 @@ if opts.with_docs then
     create(wiki .. "/docs",           nil)
     create(wiki .. "/docs/README.md", DOCS_README)
 end
+
+if opts.embed then
+    embed_self(root)
+end
+ensure_agents_directive(root, opts.agents)
 
 print()
 ok("Wiki initialized!")
