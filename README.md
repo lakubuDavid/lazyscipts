@@ -64,9 +64,12 @@ todo init [--embed] [--agents|--no-agents]
 | `todo update TASK_ID STATUS` | Change task status (`pending`, `in-progress`, `done`, `canceled`) |
 | `todo edit TASK_ID` | Open task in `$EDITOR` (interactive only) |
 | `todo init [--embed] [--agents]` | Create `todos/index.lua`; `--embed` copies `todo` into `scripts/` + root symlink |
+| `todo agents [--print]` | Append the usage directive to `AGENTS.md` (`--print` shows it instead) |
 
-`todo init` and `wiki-init` can append a short usage directive to `AGENTS.md`
-(idempotent `<!-- begin ... -->` marker blocks; prompted when interactive, `--agents` forces, `--no-agents` skips).
+`todo agents` and `wiki-init agents` write just the usage directive to `AGENTS.md`
+(`--print` shows it instead; both are idempotent `<!-- begin ... -->` marker blocks).
+`todo init` / full `wiki-init` runs can also add it (`--agents` forces, `--no-agents` skips,
+otherwise prompted when interactive).
 `wiki-init --embed` does the same copy+symlink for itself.
 
 Storage lives in a `./todos/` directory relative to where you run the command.

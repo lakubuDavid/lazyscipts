@@ -14,10 +14,14 @@
 --   --force                    Overwrite existing files
 --   --embed                    Copy wiki-init into <root>/scripts/ + symlink <root>/wiki-init
 --   --agents / --no-agents     Add wiki directive to <root>/AGENTS.md (else prompt when TTY)
+--
+-- Subcommand (mirrors `todo agents`):
+--   wiki-init agents [--print]  Only write/print the AGENTS.md directive, skip scaffold
 --   --root <PATH>              Use PATH as project root (skip detection)
 --
 -- Usage:
 --   ./wiki-init
+--   ./wiki-init agents [--print]
 --   ./wiki-init --root /path/to/project
 --   ./wiki-init --with-guides --with-diagrams
 --   ./wiki-init --dry-run
@@ -40,6 +44,20 @@ local function run(cmd)
     return ok
 end
 
+-- ── AGENTS.md directive (defined early: `agents --print` exits before root detection) ──
+local WIKI_AGENTS_BEGIN = "<!-- begin wiki-init agent directive -->"
+local WIKI_AGENTS_END = "<!-- end wiki-init agent directive -->"
+local WIKI_AGENTS_BLOCK = table.concat({
+    WIKI_AGENTS_BEGIN,
+    "## Project wiki (./wiki/)",
+    "- Concepts: one file per tool/tech in `wiki/concepts/<name>.md` (what it is, why we use it, usage here, gotchas).",
+    "- Decisions: one record per decision in `wiki/decisions/<topic>.md` (status/date, context, decision, alternatives, consequences).",
+    "- Conventions: coding rules live in `wiki/guidelines.md`; extend its sections, don't spawn loose files.",
+    "- Optional areas: `wiki/guides/{users,devs}/` (audience guides), `wiki/diagrams/` (d2/mermaid sources + renders), `wiki/docs/` (project-specific specs).",
+    "- Follow each directory's README.md format; if `wiki/` is missing, create the skeleton with `wiki-init`.",
+    WIKI_AGENTS_END,
+}, "\n") .. "\n"
+
 -- ── Flags ────────────────────────────────────────────────────────────────────
 local opts = {
     with_guides  = false,
@@ -49,10 +67,21 @@ local opts = {
     force        = false,
     embed        = false,
     agents       = nil, -- "yes" forces add, "no" forces skip, nil prompts when TTY
+    agents_only  = nil, -- "append" or "print": directive step only, skip scaffold
     root         = nil,
 }
 
 local i = 1
+-- subcommand form, mirrors `todo agents`; explicit intent, no prompt
+if arg[1] == "agents" then
+    local mode = arg[2]
+    if (mode ~= nil and mode ~= "--print") or arg[3] ~= nil then
+        io.stderr:write(string.format("%sUsage: wiki-init agents [--print]%s\n", RED, NC))
+        os.exit(1)
+    end
+    opts.agents_only = (mode == "--print") and "print" or "append"
+    i = #arg + 1 -- skip flag parsing
+end
 while i <= #arg do
     local a = arg[i]
     if a == "--with-guides"   then opts.with_guides   = true
@@ -88,6 +117,8 @@ Options:
   --embed              Copy wiki-init into <root>/scripts/ + symlink <root>/wiki-init
   --agents             Add wiki directive to <root>/AGENTS.md
   --no-agents          Never touch AGENTS.md (default: prompt when TTY)
+Subcommand (mirrors `todo agents`):
+  agents [--print]     Only write/print the AGENTS.md directive, skip scaffolding
   --root <PATH>        Use PATH as project root (skip root detection)]])
         os.exit(0)
     else
@@ -95,6 +126,12 @@ Options:
         os.exit(1)
     end
     i = i + 1
+end
+
+-- `agents --print` needs no project root; exit before root detection
+if opts.agents_only == "print" then
+    print(WIKI_AGENTS_BLOCK)
+    os.exit(0)
 end
 
 -- ── Filesystem helpers ───────────────────────────────────────────────────────
@@ -430,14 +467,6 @@ end
 
 local WIKI_AGENTS_BEGIN = "<!-- begin wiki-init agent directive -->"
 local WIKI_AGENTS_END = "<!-- end wiki-init agent directive -->"
-local WIKI_AGENTS_BLOCK = table.concat({
-    WIKI_AGENTS_BEGIN,
-    "## wiki-init (project wiki in ./wiki/)",
-    "- `wiki-init --root <PATH> [--with-guides] [--with-diagrams] [--with-docs]` -- scaffold wiki/README.md, concepts/, decisions/, guidelines.md",
-    "- Re-run safely; existing files are skipped unless `--force`. Preview with `--dry-run`.",
-    WIKI_AGENTS_END,
-}, "\n") .. "\n"
-
 local function read_file_opt(path)
     local f = io.open(path, "r")
     if not f then return nil end
@@ -507,6 +536,10 @@ local function embed_self(root_dir)
 end
 
 -- ── Build the wiki ───────────────────────────────────────────────────────────
+if opts.agents_only == "append" then -- `agents` subcommand: no prompt, scaffold skipped
+    ensure_agents_directive(root, "yes")
+    os.exit(0)
+end
 info("Initializing wiki in: %s", wiki)
 print()
 

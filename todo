@@ -8,6 +8,7 @@
 --   todo update TASK_ID pending|in-progress|done|canceled
 --   todo edit TASK_ID            (interactive $EDITOR; NOT for AI agents, no TTY)
 --   todo init [--embed] [--agents|--no-agents]
+--   todo agents [--print]        (append directive to AGENTS.md; --print shows it)
 --
 -- Storage:
 --   ./todos/index.lua        -- a Lua table (not JSON), loaded with dofile()
@@ -374,6 +375,17 @@ local function cmd_edit(id)
   print(string.format("Edited task %s (%s)", id, filepath))
 end
 
+local function cmd_agents(mode)
+  if mode == "--print" then
+    print(TODO_AGENTS_BLOCK)
+    return
+  elseif mode ~= nil then
+    print("Usage: todo agents [--print]")
+    return
+  end
+  ensure_agents_directive("yes") -- explicit command: no prompt
+end
+
 local function cmd_init()
   local embed, agents = false, nil
   for k = 2, #arg do
@@ -404,6 +416,7 @@ todo — a markdown-backed todo CLI
   todo update TASK_ID pending|in-progress|done|canceled
   todo edit TASK_ID            (opens $EDITOR; needs TTY, not for AI agents)
   todo init [--embed] [--agents|--no-agents]
+  todo agents [--print]       (append directive to AGENTS.md; --print shows it)
 ]])
 end
 
@@ -423,6 +436,8 @@ elseif command == "edit" then
   cmd_edit(arg[2])
 elseif command == "init" then
   cmd_init()
+elseif command == "agents" then
+  cmd_agents(arg[2])
 else
   usage()
 end
